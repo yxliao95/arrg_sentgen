@@ -8,7 +8,7 @@
 #SBATCH --error=/scratch/c.c21051562/workspace/arrg_sentgen/outputs/logs/std/stderr_%J.log
 
 # Number of GPUs to allocate (don't forget to select a partition with GPUs)
-#SBATCH --partition=accel_ai
+#SBATCH --partition=accel_ai_dev
 #SBATCH --gres=gpu:1
 ### SBATCH -t 0-00:00
 
@@ -29,7 +29,7 @@ conda activate $env
 echo "Loaded $conda, env: $env"
 nvcc -V
 
-python /scratch/c.c21051562/workspace/arrg_sentgen/llm_split_sent.py --from_bash --partition 3
+python /scratch/c.c21051562/workspace/arrg_sentgen/llm_split_sent.py --from_bash --partition 1
 
 python /scratch/c.c21051562/workspace/arrg_sentgen/test_email.py
 
