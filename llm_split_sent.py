@@ -48,17 +48,17 @@ def llm_process(generator, prompt, sent_str_list):
     #     [{'generated_text': '[STABLE SMALL LEFT PLEURAL EFFUSION.]'}],
     #     [{'generated_text': '[FEEDING TUBE AND STERNAL PLATES ARE SEEN.]'}]
     # ]
-    batch_sent_splits = []
+    batch_split_sents = []
     for out in outputs:
         asst_content = out[-1]["generated_text"]
         # remove "[" and "]" from the each split sentence
-        sent_splits = [marked_sent.strip().lstrip("[").rstrip("]") for marked_sent in asst_content.split("\n")]
-        batch_sent_splits.append(sent_splits)
+        split_sents = [marked_sent.strip().lstrip("[").rstrip("]").strip() for marked_sent in asst_content.split("\n")]
+        batch_split_sents.append(split_sents)
 
     # LOGGER.debug(f"origianl sent || {sent_str_list}")
-    # LOGGER.debug(f'output || {batch_sent_splits}')
+    # LOGGER.debug(f'output || {batch_split_sents}')
 
-    return batch_sent_splits
+    return batch_split_sents
 
 
 def load_model(model_id):
@@ -69,6 +69,7 @@ def load_model(model_id):
         model_kwargs={"torch_dtype": torch.bfloat16},
         device_map="auto",
     )
+    generator.tokenizer.padding_side = "left"
     generator.tokenizer.pad_token_id = generator.model.config.eos_token_id[0]
     LOGGER.info("generator.model.config %s", generator.model.config)
     return generator
@@ -105,10 +106,11 @@ def partition_list(lst, curr_partition, max_partition):
     return lst[start:end]
 
 
-def write_jsonline_to(f, doc_key, sent_idx, sent_splits, original_sent):
-    out_json = {"doc_key": doc_key, "sent_idx": sent_idx, "original_sent": original_sent, "sent_splits": sent_splits}
+def write_jsonline_to(f, doc_key, sent_idx, split_sents, original_sent):
+    out_json = {"doc_key": doc_key, "sent_idx": sent_idx, "original_sent": original_sent, "split_sents": split_sents}
     out_json_str = json.dumps(out_json, separators=(",", ":"))  # compact
     f.write(out_json_str + "\n")
+    f.flush()
 
 
 def read_last_line(data_path):
@@ -187,35 +189,38 @@ if __name__ == "__main__":
 
     output_dir = "/scratch/c.c21051562/workspace/arrg_sentgen/outputs/interpret_sents"
     os.makedirs(output_dir, exist_ok=True)
-    output_file_path = os.path.join(output_dir, f"llm_sent_splits_{curr_partition}_of_{max_partition}.json")
+    output_file_path = os.path.join(output_dir, f"llm_split_sents_{curr_partition}_of_{max_partition}.json")
     # assert not os.path.exists(output_file_path)
     # if os.path.exists(output_file_path):
     #     os.remove(output_file_path)
 
     batch_info = []
-    batch_size = 64
+    batch_size = 60
     LOGGER.info("Batch size: %s", batch_size)
 
     # 如果ARCCA一次处理不完时，需要重复运行脚本，此时则跳过已经处理的文件
-    processed_ids = []
+    processed_ids = set()
     if os.path.exists(output_file_path):
         with open(output_file_path, "r") as f:
-            for line in f.readlines():
+            for line in f:
                 processed_doc_sent = json.loads(line.strip())
-                processed_ids.append(f"{processed_doc_sent['doc_key']}#{processed_doc_sent['sent_idx']}")
+                processed_ids.add(f"{processed_doc_sent['doc_key']}#{processed_doc_sent['sent_idx']}")
+    LOGGER.info("%s sentences has been processed, will be skipped.", len(processed_ids))
 
     with open(output_file_path, "a") as f:
-
         def process_batch(batch_info):
-            batch_sents = [sent_str for (_, _, sent_str) in batch_info]
-            batch_sent_splits = llm_process(generator, prompt, batch_sents)
-            for (doc_key, sent_idx, sent_str), sent_splits in zip(batch_info, batch_sent_splits):
-                write_jsonline_to(f, doc_key=doc_key, sent_idx=sent_idx, sent_splits=sent_splits, original_sent=sent_str)
+            batch_sents = [f"Here's the input sentence: [{sent_str.strip()}]" for (_, _, sent_str) in batch_info]
+            batch_split_sents = llm_process(generator, prompt, batch_sents)
+            for (doc_key, sent_idx, sent_str), split_sents in zip(batch_info, batch_split_sents):
+                write_jsonline_to(f, doc_key=doc_key, sent_idx=sent_idx, split_sents=split_sents, original_sent=sent_str)
 
         start = time.time()
         for data_idx, (doc_key, sent_idx, sent_str) in enumerate(doc_sents_info):
-            # Manually batching data: if a doc_sent exist, skip it; if a doc section is empty, write the empty data to file and go next
+            # Manually batching data: if a doc_sent exist, skip it;
             if f"{doc_key}#{sent_idx}" in processed_ids:
+                if (data_idx + 1) % 5000 == 0:
+                    end = time.time()
+                    LOGGER.info("Skipped %s sentences (curr doc %s). Time elapsed: %s", data_idx + 1, doc_key, seconds_to_time_str(end - first_start))
                 continue
             else:
                 batch_info.append((doc_key, sent_idx, sent_str))

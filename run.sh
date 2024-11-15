@@ -4,11 +4,11 @@
 #SBATCH --account=scw2258
 
 # job stdout file. The '%J' to Slurm is replaced with the job number.
-#SBATCH --output=/scratch/c.c21051562/workspace/arrg_sentgen/outputs/logs/std/stdout_%J.log
-#SBATCH --error=/scratch/c.c21051562/workspace/arrg_sentgen/outputs/logs/std/stderr_%J.log
+#SBATCH --output=/scratch/c.c21051562/workspace/arrg_sentgen/outputs/logs/stdout/stdout_%J.log
+#SBATCH --error=/scratch/c.c21051562/workspace/arrg_sentgen/outputs/logs/stderr/stderr_%J.log
 
 # Number of GPUs to allocate (don't forget to select a partition with GPUs)
-#SBATCH --partition=accel_ai_dev
+#SBATCH --partition=accel_ai
 #SBATCH --gres=gpu:1
 ### SBATCH -t 0-00:00
 
@@ -30,12 +30,13 @@ echo "Loaded $conda, env: $env"
 nvcc -V
 
 python /scratch/c.c21051562/workspace/arrg_sentgen/llm_split_sent.py --from_bash --partition 1
+# python /scratch/c.c21051562/workspace/arrg_sentgen/test.py
 
 python /scratch/c.c21051562/workspace/arrg_sentgen/test_email.py
 
 # nohup/scratch/c.c21051562/workspace/arrg_cxrgraph/run_joint.sh > nohup.log 2>&1 &
 
-# sbatch /scratch/c.c21051562/workspace/arrg_sentgen/basic.sh
+# sbatch /scratch/c.c21051562/workspace/arrg_sentgen/run.sh
 # scontrol show job JOBID
 # scontrol show job JOBID | grep NodeList
 # scancel JOBID
